@@ -1,4 +1,5 @@
-FROM php84:latest
+FROM my-base-container:latest
+
 USER root
 
 RUN apk add --no-cache --virtual .build-deps \
@@ -9,6 +10,7 @@ RUN apk add --no-cache --virtual .build-deps \
 
 RUN /usr/local/bin/pecl install xdebug-3.4.0 \
     && rm -rf /tmp/pear
+
 
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
