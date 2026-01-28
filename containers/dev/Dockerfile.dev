@@ -1,0 +1,20 @@
+FROM php84:latest
+USER root
+
+RUN apk add --no-cache --virtual .build-deps \
+    autoconf \
+    g++ \
+    make \
+    linux-headers
+
+RUN /usr/local/bin/pecl install xdebug-3.4.0 \
+    && rm -rf /tmp/pear
+
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+RUN apk del .build-deps
+
+RUN touch /usr/local/etc/php/conf.d/99-xdebug.ini \
+    && chown www-data:www-data /usr/local/etc/php/conf.d/99-xdebug.ini
+
+USER www-data

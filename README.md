@@ -1,82 +1,55 @@
 # TYPO3 Base Prod Container for PHP 8.4
 
-This container provides a TYPO3 base environment built on PHP-FPM 8.2 and includes all required components to run a standard TYPO3 installation.
+This environment provides a pre-configured **PHP 8.4** container. Thanks to **fixuid**, all file permissions are automatically mapped to your local host user to prevent `root` permission conflicts.
 
-The image is built using a multi-stage build to keep the container as lean, performant, and maintainable as possible. It is based on Alpine Linux, resulting in a hardened and resource-efficient container. In addition, the container is rootless and distroless, further reducing the attack surface and improving overall security.
+---
 
-To ensure better C compilation and interpretation, gcc is installed during the build process. This intentionally avoids relying on Alpine’s default libraries and improves performance and compatibility, especially for PHP extensions and other native dependencies.
+## 1. Preparation
+To ensure the container adopts your file permissions correctly, the system needs to know your local **UID** (User ID) and **GID** (Group ID). Create a `.env` file in your project root:
 
-For project-specific usage, developers are expected to provide their own Dockerfile and copy their application code into the container accordingly.
-```dockerfile
-FROM <YOUR_IMAGE_TAG_NAME>
-
-COPY <YOUR_PROJECT_ROOT>/ .
-RUN chown -R www-data:www-data /usr/share/nginx/html/
-
-USER www-data
-ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+```bash
+UID=$(id -u)
+GID=$(id -g)
 ```
-Certain directories should not be copied directly into the container, as they are intended to be mounted later via volumes or bind mounts. This approach ensures data persistence, flexibility, and a clean separation between application code and runtime data.
-```apacheconf
-public/fileadmin
-public/typo3temp
-var/
-tests
-<packages/extensions>/ext-*/Tests
-```
+## 2. Starting the Environment
+   The image is pulled directly from the registry. A local build is generally not required:
 
-## How to extend the PHP TYPO3 base image with an embedded TYPO3 application
-This image extends the existing php84-typo3-base image by embedding a fully prepared TYPO3 application directly into the container. No volumes and no Composer install are required at runtime.
-```dockerfile
-FROM php84-typo3-base
+Bash
+docker compose pull
+docker compose up -d
+3. Working inside the Container (Composer & Shell)
+   To ensure that newly created files (such as the vendor folder) do not belong to the root user, commands must be explicitly executed as www-data. While the image is pre-configured, using the explicit flag guarantees correct ownership:
 
-WORKDIR /var/www/html
+    - Open an interactive shell:
+        ```bash
+         docker compose exec --user www-data php bash
+        ```
 
-COPY --chown=www-data:www-data ./typo3-app/ /var/www/html/
+    - Run Composer directly:
+        ```bash
+         docker compose exec --user www-data php composer install
+        ```
 
-RUN mkdir -p \
-    var \
-    public/typo3temp \
-    && chmod -R 775 var public/typo3temp
-```
+> Important: Never execute commands without the --user www-data flag. If files on your host ever end up belonging to root (recognizable by lock icons or permission errors), fix them on your host system using: `sudo chown -R $(id -u):$(id -g)` .
 
-### Explanation
-1. Base image
-   ```dockerfile
-   FROM php84-typo3-base
-   ```
-   Uses the prebuilt PHP-FPM base image with all required PHP extensions and configuration for TYPO3.
-2. Working directory
-   ```dockerfile
-   WORKDIR /var/www/html
-   ```
-   Sets the TYPO3 document root inside the container.
-3. Copy TYPO3 application
-   ```dockerfile
-   COPY --chown=www-data:www-data ./typo3-app/ /var/www/html/
-   ```
-   Copies the complete TYPO3 application (including vendor/) into the image and assigns correct ownership at build time.
-   This removes the need for permission fixes at container startup.
-4. Create writable TYPO3 directories
-   ```dockerfile
-   RUN mkdir -p var public/typo3temp \
-    && chmod -R 775 var public/typo3temp
-   ```
-   Ensures that TYPO3 runtime directories exist and are writable by the www-data user.
+## 4. Debugging with Xdebug
+Xdebug is pre-installed but disabled by default to maintain performance.
 
-### Requirements
-- The typo3-app/ directory must already contain:
-    - public/ 
-    - vendor/ 
-    - var/ (optional)
-- No Composer install is executed in the container. 
-- The image is intended to be immutable (no bind mounts).
+1. Activation: Set the environment variable XDEBUG_MODE=debug in your docker-compose.yaml (or your local override).
+2. IDE Connection: Your IDE (PhpStorm/VS Code) must be listening on port 9003. 
+3. Host Connection: The container communicates with your machine via host.docker.internal. Ensure that the mapping from /var/www/html to your local project path is correctly configured in your IDE.
 
-### Result
-- Fully self-contained TYPO3 container 
-- No runtime permission changes required 
-- Fast startup and reproducible builds 
-- Suitable for production and container orchestration platforms (Docker, Kubernetes)
+## 5. Troubleshooting & Logs
+All errors (PHP runtime & FPM process) are output directly to the Docker log stream:
+
+- View live logs:
+    ```bash
+     docker compose logs -f php
+    ```
+- Test PHP configuration:
+    ```bash
+     docker compose exec --user www-data php php-fpm -t
+    ```
 
 ## License
 This container image is provided as-is, without any warranties or guarantees of any kind.

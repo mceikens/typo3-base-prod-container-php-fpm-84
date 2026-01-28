@@ -1,0 +1,24 @@
+FROM alpine:3.20 AS runner
+
+RUN apk add --no-cache \
+    icu-libs libxml2 libzip oniguruma libpng libjpeg-turbo freetype gmp \
+    bzip2 gettext libxslt openssl sqlite-libs libffi zlib c-client \
+    krb5-libs tini imagemagick ghostscript libwebp libheif librsvg argon2-libs \
+    rabbitmq-c ca-certificates
+
+COPY --from=my-php-base /usr/local /usr/local
+
+WORKDIR /var/www/html
+COPY --chown=1000:1000 . /var/www/html/
+
+RUN addgroup -g 1000 -S www-data && \
+    adduser -u 1000 -D -S -G www-data -s /sbin/nologin www-data
+
+RUN rm -rf /usr/local/include /usr/local/php/man
+
+USER www-data
+
+EXPOSE 9000
+
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["/usr/local/sbin/php-fpm", "-F", "-R"]
