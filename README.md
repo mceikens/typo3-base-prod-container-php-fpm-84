@@ -4,20 +4,27 @@ This environment provides a pre-configured **PHP 8.4** container. Thanks to **fi
 
 ---
 
-## 1. Preparation
+## 1. Repository Structure & Container Variations
+The repository is designed modularly to cover different use cases:
+
+* **Base Image:** The `Dockerfile` in the root directory serves as the fundamental base image. It contains the core configuration for PHP 8.4 and all system dependencies required for TYPO3.
+* **Variations:** In the `/containers` directory, you will find specialized extensions building upon the base image (e.g., the **Dev Container** including Xdebug and Composer).
+## 2. Preparation
 To ensure the container adopts your file permissions correctly, the system needs to know your local **UID** (User ID) and **GID** (Group ID). Create a `.env` file in your project root:
 
 ```bash
 UID=$(id -u)
 GID=$(id -g)
 ```
-## 2. Starting the Environment
+## 3. Starting the Environment
    The image is pulled directly from the registry. A local build is generally not required:
 
-Bash
+```bash
 docker compose pull
 docker compose up -d
-3. Working inside the Container (Composer & Shell)
+```
+
+## 4. Working inside the Container (Composer & Shell)
    To ensure that newly created files (such as the vendor folder) do not belong to the root user, commands must be explicitly executed as www-data. While the image is pre-configured, using the explicit flag guarantees correct ownership:
 
     - Open an interactive shell:
@@ -32,14 +39,14 @@ docker compose up -d
 
 > Important: Never execute commands without the --user www-data flag. If files on your host ever end up belonging to root (recognizable by lock icons or permission errors), fix them on your host system using: `sudo chown -R $(id -u):$(id -g)` .
 
-## 4. Debugging with Xdebug
+## 5. Debugging with Xdebug
 Xdebug is pre-installed but disabled by default to maintain performance.
 
 1. Activation: Set the environment variable XDEBUG_MODE=debug in your docker-compose.yaml (or your local override).
 2. IDE Connection: Your IDE (PhpStorm/VS Code) must be listening on port 9003. 
 3. Host Connection: The container communicates with your machine via host.docker.internal. Ensure that the mapping from /var/www/html to your local project path is correctly configured in your IDE.
 
-## 5. Troubleshooting & Logs
+## 6. Troubleshooting & Logs
 All errors (PHP runtime & FPM process) are output directly to the Docker log stream:
 
 - View live logs:
