@@ -1,0 +1,7 @@
+.gitignore
+.gitlab-ci.yml
+.idea
+.vscode
+.git
+.env
+README.md
