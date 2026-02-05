@@ -1,4 +1,4 @@
-FROM my-base-container:latest
+FROM registry.mceikens-infra.de/typo3-foss/php-fpm-84:2.2.0
 
 USER root
 
@@ -8,7 +8,7 @@ RUN apk add --no-cache --virtual .build-deps \
     make \
     linux-headers
 
-RUN /usr/local/bin/pecl install xdebug-3.4.0 \
+RUN /usr/local/bin/pecl install xdebug-3.5.0 \
     && rm -rf /tmp/pear
 
 

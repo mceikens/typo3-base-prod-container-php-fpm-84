@@ -10,7 +10,7 @@ RUN apk add --no-cache \
     oniguruma-dev libpng-dev libjpeg-turbo-dev freetype-dev gmp-dev bzip2-dev \
     gettext-dev libxslt-dev openssl-dev sqlite-dev libffi-dev zlib-dev readline-dev \
     imap-dev krb5-dev imagemagick-dev libwebp-dev libheif-dev librsvg-dev libc-dev \
-    argon2-dev rabbitmq-c-dev linux-headers re2c pkgconf git
+    argon2-dev rabbitmq-c-dev linux-headers re2c pkgconf git libsodium-dev
 
 RUN curl -fsSL https://www.php.net/distributions/php-${PHP_VERSION}.tar.xz -o php.tar.xz \
     && mkdir -p /usr/src/php \
@@ -21,7 +21,7 @@ RUN cd /usr/src/php && ./configure \
     --enable-opcache --enable-soap --enable-sockets --enable-zts --with-xsl --with-zip \
     --with-openssl --with-imap --with-imap-ssl --with-pdo-mysql --with-mysqli \
     --with-jpeg --with-webp --with-freetype --with-curl --with-zlib --with-pear \
-    --with-fpm-user=www-data --with-fpm-group=www-data \
+    --with-fpm-user=www-data --with-fpm-group=www-data --with-sodium --enable-gd \
     && make -j$(nproc) && make install
 
 RUN git clone https://github.com/Imagick/imagick.git /tmp/imagick \
@@ -41,9 +41,12 @@ RUN apk add --no-cache \
     curl icu-libs libxml2 libzip oniguruma libpng libjpeg-turbo freetype gmp \
     bzip2 gettext libxslt openssl sqlite-libs libffi zlib readline c-client \
     krb5-libs tini imagemagick ghostscript libwebp libheif librsvg argon2-libs \
-    rabbitmq-c bash shadow ca-certificates
+    rabbitmq-c bash shadow ca-certificates libsodium
 
 COPY --from=build /usr/local /usr/local
+
+# Explizit die Extension-Dateien kopieren (falls sie woanders liegen)
+COPY --from=build /usr/local/lib/php/extensions /usr/local/lib/php/extensions
 
 RUN set -x \
     && addgroup -g 1000 -S www-data 2>/dev/null || true \
