@@ -18,8 +18,10 @@ RUN git clone --depth 1 --branch 3.5.0 https://github.com/xdebug/xdebug.git /tmp
     && make install \
     && rm -rf /tmp/xdebug
 
+RUN echo "disable_functions=" > /usr/local/etc/php/conf.d/00-disable-functions.ini
+
 RUN curl -sS https://getcomposer.org/installer -o composer-setup.php \
-    && php -d "disable_functions=" composer-setup.php --install-dir=/usr/local/bin --filename=composer \
+    && php composer-setup.php --install-dir=/usr/local/bin --filename=composer \
     && rm composer-setup.php
 
 RUN apk del .build-deps
