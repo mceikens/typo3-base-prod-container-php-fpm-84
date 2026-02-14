@@ -3,7 +3,7 @@
 #######################
 FROM alpine:3.20 AS build
 
-ENV PHP_VERSION=8.4.2
+ENV PHP_VERSION=8.4.18
 
 RUN apk add --no-cache \
     autoconf bison build-base curl curl-dev tar xz icu-dev libxml2-dev libzip-dev \

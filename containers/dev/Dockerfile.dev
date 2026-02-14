@@ -1,4 +1,4 @@
-FROM registry.mceikens-infra.de/typo3-foss/php-fpm-84:2.3.0
+FROM registry.mceikens-infra.de/typo3-foss/php-fpm-84:2.3.1
 
 USER root
 
