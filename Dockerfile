@@ -1,7 +1,7 @@
 #######################
 # Stage 1: Build
 #######################
-FROM alpine:3.20 AS build
+FROM alpine:3.21 AS build
 
 ENV PHP_VERSION=8.4.18
 
@@ -65,7 +65,7 @@ RUN /usr/local/bin/pear config-set php_ini /usr/local/etc/php/php.ini \
 #######################
 # Stage 2: Runtime
 #######################
-FROM alpine:3.20
+FROM alpine:3.21
 
 # Runtime-Abhängigkeiten
 RUN apk add --no-cache \
@@ -74,6 +74,8 @@ RUN apk add --no-cache \
     krb5-libs tini imagemagick ghostscript libwebp libheif librsvg argon2-libs \
     rabbitmq-c bash shadow ca-certificates libsodium \
     hiredis lz4-libs zstd-libs
+
+RUN apk del cups-libs
 
 # PHP Installation von Build-Stage kopieren
 COPY --from=build /usr/local /usr/local
