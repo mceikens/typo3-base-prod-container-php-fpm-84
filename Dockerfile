@@ -4,7 +4,6 @@
 FROM alpine:3.21 AS build
 
 ENV PHP_VERSION=8.4.18
-# Hier kannst du die exakte ImageMagick Version festlegen (z.B. 7.1.2-25)
 ENV IMAGEMAGICK_VERSION=7.1.2-15
 ENV LIBTIFF_VERSION=4.7.1
 
@@ -92,20 +91,25 @@ RUN /usr/local/bin/pear config-set php_ini /usr/local/etc/php/php.ini \
 #######################
 # Stage 2: Runtime
 #######################
+# WICHTIG: Gleiche Alpine-Version wie Stage 1, damit ICU-Versionen übereinstimmen!
 FROM alpine:3.21
 
 USER root
 
 ENV GOLANG_VERSION=1.26.0
 
-RUN echo "@edge https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories && \
+# Edge-Repos nur als zusätzliche Quelle für spezifische Pakete (openjpeg, pixman, glib)
+RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/main" > /etc/apk/repositories && \
+    echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/community" >> /etc/apk/repositories && \
+    echo "@edge https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories && \
     echo "@edge https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
 
-# Runtime-Abhängigkeiten (OHNE das Paket 'imagemagick', da wir es kopieren)
+# System vollständig upgraden (behebt busybox, curl, zlib CVEs soweit möglich in 3.21)
 RUN apk update && apk upgrade --no-cache
 
-RUN apk update && apk upgrade --no-cache && \
-    apk add --no-cache \
+# Runtime-Pakete installieren
+# openjpeg, pixman, glib aus Edge für gepatchte CVE-Versionen
+RUN apk add --no-cache \
     curl icu-libs libxml2 libzip oniguruma libpng libjpeg-turbo freetype gmp \
     bzip2 gettext libxslt openssl sqlite-libs libffi zlib readline c-client \
     krb5-libs tini ghostscript \
@@ -113,14 +117,20 @@ RUN apk update && apk upgrade --no-cache && \
     libheif librsvg argon2-libs \
     rabbitmq-c bash shadow ca-certificates libsodium \
     hiredis lz4-libs zstd-libs \
-    openjpeg@edge pixman@edge glib@edge avahi-libs@edge
-# WICHTIG: Alle kompilierten Binaries und Libraries (PHP + ImageMagick) kopieren
+    openjpeg@edge pixman@edge glib@edge
+
+# cups-libs und avahi-libs entfernen - nicht benötigt, haben High/Medium CVEs
+# cups-libs: CVE-2018-6553 (High)
+# avahi-libs: CVE-2025-68468, CVE-2026-24401, CVE-2025-59529, CVE-2025-68471, CVE-2025-68276
+RUN apk del --no-cache avahi-libs cups-libs 2>/dev/null || true
+
+# Alle kompilierten Binaries und Libraries (PHP + ImageMagick) kopieren
 COPY --from=build /usr/local /usr/local
 
 ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/lib:/lib
 RUN ln -s /usr/lib/libwebp.so.7 /usr/lib/libwebp.so.6 || true
 
-# Shared Libraries Cache aktualisieren, damit das System das neue ImageMagick findet
+# Shared Libraries Cache aktualisieren
 RUN ldconfig /usr/local/lib || echo "/usr/local/lib" > /etc/ld.so.conf.d/local.conf && ldconfig /usr/local/lib || true
 
 # User/Group erstellen
@@ -162,7 +172,6 @@ RUN mkdir -p /etc/fixuid && \
 
 RUN chown root:root /usr/local/bin/fixuid && \
     chmod 4755 /usr/local/bin/fixuid
-
 
 WORKDIR /var/www/html
 USER root
