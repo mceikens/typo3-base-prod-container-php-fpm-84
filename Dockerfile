@@ -94,17 +94,26 @@ RUN /usr/local/bin/pear config-set php_ini /usr/local/etc/php/php.ini \
 #######################
 FROM alpine:3.21
 
+USER root
+
+ENV GOLANG_VERSION=1.26.0
+
+RUN echo "@edge https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories && \
+    echo "@edge https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
+
 # Runtime-Abhängigkeiten (OHNE das Paket 'imagemagick', da wir es kopieren)
 RUN apk update && apk upgrade --no-cache
 
-RUN apk add --no-cache \
-        curl icu-libs libxml2 libzip oniguruma libpng libjpeg-turbo freetype gmp \
-        bzip2 gettext libxslt openssl sqlite-libs libffi zlib readline c-client \
-        krb5-libs tini ghostscript \
-        libwebp libwebp-dev lcms2 libgomp \
-        libheif librsvg argon2-libs \
-        rabbitmq-c bash shadow ca-certificates libsodium \
-        hiredis lz4-libs zstd-libs openjpeg pixman
+RUN apk update && apk upgrade --no-cache && \
+    apk add --no-cache \
+    curl icu-libs libxml2 libzip oniguruma libpng libjpeg-turbo freetype gmp \
+    bzip2 gettext libxslt openssl sqlite-libs libffi zlib readline c-client \
+    krb5-libs tini ghostscript \
+    libwebp libwebp-dev lcms2 libgomp \
+    libheif librsvg argon2-libs \
+    rabbitmq-c bash shadow ca-certificates libsodium \
+    hiredis lz4-libs zstd-libs \
+    openjpeg@edge pixman@edge glib@edge avahi-libs@edge
 # WICHTIG: Alle kompilierten Binaries und Libraries (PHP + ImageMagick) kopieren
 COPY --from=build /usr/local /usr/local
 
@@ -131,16 +140,14 @@ COPY --chown=www-data:www-data ./config/php-fpm.conf /usr/local/etc/php-fpm.conf
 COPY --chown=www-data:www-data ./config/www.conf /usr/local/etc/php-fpm.d/www.conf
 
 # fixuid frisch kompilieren (Go CVE fix)
-RUN apk add --no-cache --virtual .build-deps go git && \
+RUN apk add --no-cache --virtual .build-deps git curl && \
+    curl -fsSL https://golang.org/dl/go${GOLANG_VERSION}.linux-amd64.tar.gz -o go.tar.gz && \
+    tar -C /usr/local -xzf go.tar.gz && \
+    export PATH=$PATH:/usr/local/go/bin && \
     go install github.com/boxboat/fixuid@latest && \
     cp $(go env GOPATH)/bin/fixuid /usr/local/bin/fixuid && \
-    chown root:root /usr/local/bin/fixuid && \
-    chmod 4755 /usr/local/bin/fixuid && \
-    mkdir -p /etc/fixuid && \
-    echo "user: www-data" > /etc/fixuid/config.yml && \
-    echo "group: www-data" >> /etc/fixuid/config.yml && \
     apk del .build-deps && \
-    rm -rf /root/go
+    rm -rf /usr/local/go go.tar.gz /root/go
 
 # Berechtigungen
 RUN chown -R www-data:www-data /var/run/php-fpm /var/log/php-fpm /usr/local/etc/php /var/www/html
@@ -148,8 +155,17 @@ RUN chown -R www-data:www-data /var/run/php-fpm /var/log/php-fpm /usr/local/etc/
 COPY --chown=www-data:www-data ./entrypoint/docker-entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+RUN mkdir -p /etc/fixuid && \
+    printf "user: www-data\ngroup: www-data\n" > /etc/fixuid/config.yml && \
+    chown root:root /etc/fixuid/config.yml && \
+    chmod 644 /etc/fixuid/config.yml
+
+RUN chown root:root /usr/local/bin/fixuid && \
+    chmod 4755 /usr/local/bin/fixuid
+
+
 WORKDIR /var/www/html
-USER www-data:www-data
+USER root
 EXPOSE 9000
 
 ENTRYPOINT ["fixuid", "-q", "/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
