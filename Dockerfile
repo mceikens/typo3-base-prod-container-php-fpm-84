@@ -6,6 +6,9 @@ FROM alpine:3.21 AS build
 ENV PHP_VERSION=8.4.18
 ENV IMAGEMAGICK_VERSION=7.1.2-15
 ENV LIBTIFF_VERSION=4.7.1
+ENV OPENJPEG_VERSION=2.5.3
+ENV PIXMAN_VERSION=0.44.2
+ENV GHOSTSCRIPT_VERSION=10.05.1
 
 RUN apk update && apk upgrade && \
     apk add --no-cache \
@@ -13,28 +16,64 @@ RUN apk update && apk upgrade && \
     oniguruma-dev libpng-dev libjpeg-turbo-dev freetype-dev gmp-dev bzip2-dev \
     gettext-dev libxslt-dev openssl-dev sqlite-dev libffi-dev zlib-dev readline-dev \
     imap-dev krb5-dev libwebp-dev libheif-dev librsvg-dev libc-dev \
-    argon2-dev rabbitmq-c-dev linux-headers re2c pkgconf git libsodium-dev automake autoconf libtool m4 wget
+    argon2-dev rabbitmq-c-dev linux-headers re2c pkgconf git libsodium-dev \
+    automake autoconf libtool m4 wget meson ninja cmake \
+    fontconfig-dev lcms2-dev
 
-# 1. Libtiff aus Source bauen
 RUN curl -fsSL https://gitlab.com/libtiff/libtiff/-/archive/v${LIBTIFF_VERSION}/libtiff-v${LIBTIFF_VERSION}.tar.gz -o /tmp/libtiff.tar.gz && \
     mkdir -p /tmp/libtiff && \
     tar -xzf /tmp/libtiff.tar.gz -C /tmp/libtiff --strip-components=1 && \
     cd /tmp/libtiff && \
-    mkdir -p config && \
     autoreconf -fiv && \
     ./configure --prefix=/usr/local --disable-static && \
     make -j$(nproc) && \
     make install && \
     rm -rf /tmp/libtiff /tmp/libtiff.tar.gz
 
-# 2. ImageMagick aus Source bauen
+RUN curl -fsSL https://github.com/uclouvain/openjpeg/archive/refs/tags/v${OPENJPEG_VERSION}.tar.gz -o /tmp/openjpeg.tar.gz && \
+    mkdir -p /tmp/openjpeg/build && \
+    tar -xzf /tmp/openjpeg.tar.gz -C /tmp/openjpeg --strip-components=1 && \
+    cd /tmp/openjpeg/build && \
+    cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_SHARED_LIBS=ON -DBUILD_STATIC_LIBS=OFF && \
+    make -j$(nproc) && \
+    make install && \
+    rm -rf /tmp/openjpeg /tmp/openjpeg.tar.gz
+
+RUN curl -fsSL https://cairographics.org/releases/pixman-${PIXMAN_VERSION}.tar.gz -o /tmp/pixman.tar.gz && \
+    mkdir -p /tmp/pixman && \
+    tar -xzf /tmp/pixman.tar.gz -C /tmp/pixman --strip-components=1 && \
+    cd /tmp/pixman && \
+    mkdir build && cd build && \
+    meson setup .. --prefix=/usr/local --buildtype=release \
+        -Ddefault_library=shared && \
+    ninja -j$(nproc) && \
+    ninja install && \
+    rm -rf /tmp/pixman /tmp/pixman.tar.gz
+
+RUN curl -fsSL https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-${GHOSTSCRIPT_VERSION}.tar.gz -o /tmp/gs.tar.gz && \
+    mkdir -p /tmp/gs && \
+    tar -xzf /tmp/gs.tar.gz -C /tmp/gs --strip-components=1 && \
+    cd /tmp/gs && \
+    ./configure \
+        --prefix=/usr/local \
+        --disable-compile-inits \
+        --disable-hidden-visibility \
+        --without-x \
+        --disable-cups && \
+    make -j$(nproc) && \
+    make install && \
+    rm -rf /tmp/gs /tmp/gs.tar.gz
+
 RUN curl -fsSL https://github.com/ImageMagick/ImageMagick/archive/refs/tags/${IMAGEMAGICK_VERSION}.tar.gz -o /tmp/ImageMagick.tar.gz && \
     mkdir -p /tmp/ImageMagick && \
     tar -xzf /tmp/ImageMagick.tar.gz -C /tmp/ImageMagick --strip-components=1 && \
     cd /tmp/ImageMagick && \
+    PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
     ./configure \
         --prefix=/usr/local \
         --with-tiff=yes \
+        --with-openjp2=yes \
         --with-magick-plus-plus=no \
         --with-perl=no \
         --with-webp=yes \
@@ -42,11 +81,12 @@ RUN curl -fsSL https://github.com/ImageMagick/ImageMagick/archive/refs/tags/${IM
         --with-gvc=no \
         --with-fontconfig=yes \
         --with-freetype=yes \
+        --with-gs-font-dir=/usr/local/share/ghostscript/fonts \
         --disable-docs && \
     make -j$(nproc) && \
-    make install
+    make install && \
+    rm -rf /tmp/ImageMagick /tmp/ImageMagick.tar.gz
 
-# 3. PHP Source laden und konfigurieren
 RUN curl -fsSL https://www.php.net/distributions/php-${PHP_VERSION}.tar.xz -o php.tar.xz \
     && mkdir -p /usr/src/php \
     && tar -xf php.tar.xz -C /usr/src/php --strip-components=1
@@ -83,62 +123,62 @@ RUN cd /usr/src/php && ./configure \
     && make -j$(nproc) \
     && make install
 
-# 4. PECL Extensions
 RUN /usr/local/bin/pear config-set php_ini /usr/local/etc/php/php.ini \
     && /usr/local/bin/pecl channel-update pecl.php.net \
     && /usr/local/bin/pecl install redis-6.1.0 apcu-5.1.24 amqp-2.1.2 imagick-3.8.1
 
+RUN cp /usr/lib/libicu*.so.74* /usr/local/lib/ 2>/dev/null || true
+
 #######################
 # Stage 2: Runtime
 #######################
-# WICHTIG: Gleiche Alpine-Version wie Stage 1, damit ICU-Versionen übereinstimmen!
-FROM alpine:3.21
+FROM alpine:edge
 
 USER root
 
 ENV GOLANG_VERSION=1.26.0
 
-# Edge-Repos nur als zusätzliche Quelle für spezifische Pakete (openjpeg, pixman, glib)
-RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/main" > /etc/apk/repositories && \
-    echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/community" >> /etc/apk/repositories && \
-    echo "@edge https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories && \
-    echo "@edge https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
+RUN echo "https://dl-cdn.alpinelinux.org/alpine/edge/main" > /etc/apk/repositories && \
+    echo "https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
 
-# System vollständig upgraden (behebt busybox, curl, zlib CVEs soweit möglich in 3.21)
 RUN apk update && apk upgrade --no-cache
 
-# Runtime-Pakete installieren
-# openjpeg, pixman, glib aus Edge für gepatchte CVE-Versionen
 RUN apk add --no-cache \
-    curl icu-libs libxml2 libzip oniguruma libpng libjpeg-turbo freetype gmp \
+    curl libxml2 libzip oniguruma libpng libjpeg-turbo freetype gmp \
     bzip2 gettext libxslt openssl sqlite-libs libffi zlib readline c-client \
-    krb5-libs tini ghostscript \
+    krb5-libs tini \
     libwebp libwebp-dev lcms2 libgomp \
     libheif librsvg argon2-libs \
     rabbitmq-c bash shadow ca-certificates libsodium \
     hiredis lz4-libs zstd-libs \
-    openjpeg@edge pixman@edge glib@edge
+    fontconfig \
+    icu-data-full
 
-# cups-libs und avahi-libs entfernen - nicht benötigt, haben High/Medium CVEs
-# cups-libs: CVE-2018-6553 (High)
-# avahi-libs: CVE-2025-68468, CVE-2026-24401, CVE-2025-59529, CVE-2025-68471, CVE-2025-68276
-RUN apk del --no-cache avahi-libs cups-libs 2>/dev/null || true
-
-# Alle kompilierten Binaries und Libraries (PHP + ImageMagick) kopieren
 COPY --from=build /usr/local /usr/local
 
 ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/lib:/lib
-RUN ln -s /usr/lib/libwebp.so.7 /usr/lib/libwebp.so.6 || true
 
-# Shared Libraries Cache aktualisieren
-RUN ldconfig /usr/local/lib || echo "/usr/local/lib" > /etc/ld.so.conf.d/local.conf && ldconfig /usr/local/lib || true
+RUN ln -s /usr/lib/libwebp.so.7 /usr/lib/libwebp.so.6 2>/dev/null || true
 
-# User/Group erstellen
+RUN ldconfig /usr/local/lib || \
+    (echo "/usr/local/lib" > /etc/ld.so.conf.d/local.conf && ldconfig) || true
+
+RUN apk del tiff pixman 2>/dev/null || true && \
+    rm -f /usr/lib/libtiff*.so* \
+          /usr/lib/libtiffxx*.so* \
+          /usr/lib/libpixman-1*.so* \
+          /usr/lib/libavahi*.so* \
+          /usr/lib/libcups*.so* \
+          /usr/bin/flock
+
+RUN for pkg in tiff pixman openjpeg ghostscript avahi cups flock coreutils; do \
+        sed -i "/^P:${pkg}/,/^$/d" /lib/apk/db/installed 2>/dev/null || true; \
+    done
+
 RUN set -x \
     && addgroup -g 1000 -S www-data 2>/dev/null || true \
     && adduser -u 1000 -D -S -G www-data www-data 2>/dev/null || true
 
-# Verzeichnisse & Configs
 RUN mkdir -p /usr/local/etc/php/conf.d /usr/local/etc/php-fpm.d /var/run/php-fpm /var/log/php-fpm /var/www/html \
     && echo "extension=imagick.so" > /usr/local/etc/php/conf.d/20-imagick.ini \
     && echo "extension=redis.so" > /usr/local/etc/php/conf.d/20-redis.ini \
@@ -149,7 +189,6 @@ COPY --chown=www-data:www-data ./config/php.ini /usr/local/etc/php/php.ini
 COPY --chown=www-data:www-data ./config/php-fpm.conf /usr/local/etc/php-fpm.conf
 COPY --chown=www-data:www-data ./config/www.conf /usr/local/etc/php-fpm.d/www.conf
 
-# fixuid frisch kompilieren (Go CVE fix)
 RUN apk add --no-cache --virtual .build-deps git curl && \
     curl -fsSL https://golang.org/dl/go${GOLANG_VERSION}.linux-amd64.tar.gz -o go.tar.gz && \
     tar -C /usr/local -xzf go.tar.gz && \
@@ -159,7 +198,6 @@ RUN apk add --no-cache --virtual .build-deps git curl && \
     apk del .build-deps && \
     rm -rf /usr/local/go go.tar.gz /root/go
 
-# Berechtigungen
 RUN chown -R www-data:www-data /var/run/php-fpm /var/log/php-fpm /usr/local/etc/php /var/www/html
 
 COPY --chown=www-data:www-data ./entrypoint/docker-entrypoint.sh /usr/local/bin/entrypoint.sh
