@@ -127,7 +127,8 @@ RUN /usr/local/bin/pear config-set php_ini /usr/local/etc/php/php.ini \
     && /usr/local/bin/pecl channel-update pecl.php.net \
     && /usr/local/bin/pecl install redis-6.1.0 apcu-5.1.24 amqp-2.1.2 imagick-3.8.1
 
-RUN cp /usr/lib/libicu*.so.74* /usr/local/lib/ 2>/dev/null || true
+RUN cp /usr/lib/libicu*.so.74* /usr/local/lib/ 2>/dev/null || true \
+    && cp -r /usr/share/icu /tmp/icu-share
 
 #######################
 # Stage 2: Runtime
@@ -151,10 +152,10 @@ RUN apk add --no-cache \
     libheif librsvg argon2-libs \
     rabbitmq-c bash shadow ca-certificates libsodium \
     hiredis lz4-libs zstd-libs \
-    fontconfig \
-    icu-data-full
+    fontconfig
 
 COPY --from=build /usr/local /usr/local
+COPY --from=build /tmp/icu-share /usr/share/icu
 
 ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/lib:/lib
 
